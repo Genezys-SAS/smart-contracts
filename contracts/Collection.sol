@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
-import { ERC721Upgradeable } from '@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol';
-import { ERC721URIStorageUpgradeable } from '@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol';
-import { OwnableUpgradeable } from '@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol';
-import { ContextUpgradeable } from '@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol';
-import { ERC2771ContextUpgradeable } from '@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol';
-import { Strings } from '@openzeppelin/contracts/utils/Strings.sol';
+import { ERC721URIStorageUpgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
+import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import { ERC2771ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 
 // Uncomment this line to use console.log
 // import "hardhat/console.sol";
@@ -27,6 +26,7 @@ contract Collection is ERC721URIStorageUpgradeable, OwnableUpgradeable, ERC2771C
   bytes32 private constant MAIN_STORAGE_LOCATION = 0xbadcc9e240f39e6a3ec92bb7676afab89e84facafd785fed92f58eace7109e00;
 
   function _getMainStorage() private pure returns (MainStorage storage $) {
+    // solhint-disable-next-line no-inline-assembly
     assembly {
       $.slot := MAIN_STORAGE_LOCATION
     }
@@ -56,9 +56,9 @@ contract Collection is ERC721URIStorageUpgradeable, OwnableUpgradeable, ERC2771C
   }
 
   function batchSafeTransferFrom(address from, address to, uint256[] calldata tokenIds) external {
-    require(to != address(0), 'Cannot transfer to zero address');
-    require(tokenIds.length > 0, 'No tokens to transfer');
-    require(tokenIds.length <= 100, 'Batch size too large');
+    require(to != address(0), InvalidInput("address"));
+    require(tokenIds.length > 0, InvalidInput("Size empty"));
+    require(tokenIds.length <= 100, InvalidInput("Size too large"));
 
     for (uint256 i = 0; i < tokenIds.length; i++) {
       safeTransferFrom(from, to, tokenIds[i]);
@@ -66,11 +66,11 @@ contract Collection is ERC721URIStorageUpgradeable, OwnableUpgradeable, ERC2771C
   }
 
   function _getCardSpecificURI(uint8 cardMetadataIndex, uint8 rarity) internal pure returns (string memory) {
-    return string.concat(Strings.toString(cardMetadataIndex), '/', Strings.toString(rarity)); // Only store "${cardMetadataIndex}/${rarity}" in nft
+    return string.concat(Strings.toString(cardMetadataIndex), "/", Strings.toString(rarity)); // Only store "${cardMetadataIndex}/${rarity}" in nft
   }
 
   function tokenURI(uint256 tokenId) public view override returns (string memory) {
-    return string.concat(super.tokenURI(tokenId), '.json');
+    return string.concat(super.tokenURI(tokenId), ".json");
   }
 
   function _baseURI() internal view override returns (string memory) {
@@ -98,4 +98,6 @@ contract Collection is ERC721URIStorageUpgradeable, OwnableUpgradeable, ERC2771C
   function _contextSuffixLength() internal view virtual override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (uint256) {
     return ERC2771ContextUpgradeable._contextSuffixLength();
   }
+
+  error InvalidInput(string);
 }

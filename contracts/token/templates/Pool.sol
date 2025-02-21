@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import { ContextUpgradeable } from '@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol';
-import { ERC2771ContextUpgradeable } from '@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol';
-import '@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol';
+import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import { ERC2771ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
-import { IPool } from '../interfaces/IPool.sol';
-import { IToken } from '../interfaces/IToken.sol';
-import { MintInstructions } from '../interfaces/MintInstructions.sol';
+import { IPool } from "../interfaces/IPool.sol";
+import { IToken } from "../interfaces/IToken.sol";
+import { MintInstructions } from "../interfaces/MintInstructions.sol";
 
 /**
  * @title Pool Abstract Contract
@@ -31,15 +31,16 @@ abstract contract Pool is ERC2771ContextUpgradeable, AccessControlUpgradeable, I
   bytes32 private constant PoolStorageLocation = 0x7dcbc62ebc188fd22ac87cc31fd73ccee1ef02b1f9292e0907c4d69cb4b7c800;
 
   function _getPoolStorage() internal pure returns (PoolStorage storage $) {
+    // solhint-disable-next-line no-inline-assembly
     assembly {
       $.slot := PoolStorageLocation
     }
   }
 
   /// @notice Role for manual pool operations like minting and transfers
-  bytes32 public constant POOL_MANAGER_ROLE = keccak256('POOL_MANAGER_ROLE');
+  bytes32 public constant POOL_MANAGER_ROLE = keccak256("POOL_MANAGER_ROLE");
   /// @notice Role for automated pool operations like scheduled releases
-  bytes32 public constant POOL_PLATFORM_ROLE = keccak256('POOL_PLATFORM_ROLE');
+  bytes32 public constant POOL_PLATFORM_ROLE = keccak256("POOL_PLATFORM_ROLE");
 
   // Do not use constructor because is unsafe, except for ERC2771ContextUpgradeable that need constructor even if is upgradable contract
   /// @custom:oz-upgrades-unsafe-allow constructor
@@ -67,9 +68,16 @@ abstract contract Pool is ERC2771ContextUpgradeable, AccessControlUpgradeable, I
    */
   function addTokenAllocation(uint256 reservedAmount_) external returns (bool success) {
     PoolStorage storage $ = _getPoolStorage();
-    require(_msgSender() == $.tokenContract, 'Invalid token contract');
+    require(_msgSender() == $.tokenContract, InvalidInput("Only contract can call this"));
     $.reservedTokens += reservedAmount_;
     success = true;
+  }
+
+  /**
+   * @notice Returns the GNZ token contract address
+   */
+  function getTokenContract() public view returns (address) {
+    return _getPoolStorage().tokenContract;
   }
 
   /**
@@ -108,15 +116,15 @@ abstract contract Pool is ERC2771ContextUpgradeable, AccessControlUpgradeable, I
    */
   function _remoteMint(address to, uint256 amount) internal returns (bool success) {
     PoolStorage storage $ = _getPoolStorage();
-    require(to != address(0), 'Invalid recipient address');
-    require(amount > 0, 'Invalid amount');
-    require(amount <= $.reservedTokens, 'Insufficient reserved amount');
+    require(to != address(0), InvalidInput("to"));
+    require(amount > 0, InvalidInput("amount"));
+    require(amount <= $.reservedTokens, MissingTokens());
 
     $.reservedTokens -= amount;
     $.distributedTokens += amount;
 
     success = IToken($.tokenContract).mint(to, amount);
-    require(success, 'Failed to mint');
+    require(success, MintFailed());
   }
 
   /**
@@ -126,21 +134,21 @@ abstract contract Pool is ERC2771ContextUpgradeable, AccessControlUpgradeable, I
    */
   function _remoteBatchMint(MintInstructions[] memory mintInstructions) internal returns (bool success) {
     PoolStorage storage $ = _getPoolStorage();
-    require(mintInstructions.length > 0, 'No mint instructions to process');
-    require(mintInstructions.length <= MAX_BATCH_SIZE, 'Batch size too large');
+    require(mintInstructions.length > 0, InvalidInput("Size empty"));
+    require(mintInstructions.length <= MAX_BATCH_SIZE, InvalidInput("Size too large"));
 
     uint256 totalAmount = 0;
     for (uint256 i = 0; i < mintInstructions.length; i++) {
       totalAmount += mintInstructions[i].amount;
-      require(mintInstructions[i].to != address(0), 'Invalid recipient address');
+      require(mintInstructions[i].to != address(0), InvalidInput("address"));
     }
-    require(totalAmount <= $.reservedTokens, 'Invalid total amount');
+    require(totalAmount <= $.reservedTokens, MissingTokens());
 
     $.reservedTokens -= totalAmount;
     $.distributedTokens += totalAmount;
 
     success = IToken($.tokenContract).batchMint(mintInstructions);
-    require(success, 'Failed to batchMint');
+    require(success, MintFailed());
   }
 
   /**
@@ -150,12 +158,12 @@ abstract contract Pool is ERC2771ContextUpgradeable, AccessControlUpgradeable, I
    */
   function _transferRemainingAllocation(address to, uint256 amount) internal {
     PoolStorage storage $ = _getPoolStorage();
-    require($.reservedTokens >= amount, 'Cannot transfer more than the reserved amount');
+    require($.reservedTokens >= amount, MissingTokens());
 
     $.reservedTokens -= amount;
 
     bool success = IToken($.tokenContract).transferAllocation(to, amount);
-    require(success, 'Failed transfer allocation');
+    require(success, TransferRemainingAllocationFailed());
   }
 
   // ===== ERC2771ContextUpgradeable =====
@@ -171,4 +179,9 @@ abstract contract Pool is ERC2771ContextUpgradeable, AccessControlUpgradeable, I
   function _contextSuffixLength() internal view virtual override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (uint256) {
     return ERC2771ContextUpgradeable._contextSuffixLength();
   }
+
+  error MintFailed();
+  error TransferRemainingAllocationFailed();
+  error MissingTokens();
+  error InvalidInput(string);
 }

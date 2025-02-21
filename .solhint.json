@@ -1,0 +1,15 @@
+{
+  "extends": "solhint:recommended",
+  "plugins": ["prettier"],
+  "rules": {
+    "prettier/prettier": "error",
+    "no-global-import": "error",
+    "gas-custom-errors": "error",
+    "no-inline-assembly": "error",
+    "reason-string": "error",
+    "no-unused-import": "error",
+    "func-visibility": ["error", { "ignoreConstructors": true }],
+    "const-name-snakecase": "off",
+    "func-name-mixedcase": "off"
+  }
+}

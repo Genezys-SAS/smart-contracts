@@ -8,15 +8,15 @@ pragma solidity ^0.8.27;
  * which can later be minted in a controlled manner. The contract is designed to be secure, upgradeable,
  * and compliant with OpenZeppelin standards.
  */
-import '@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol';
-import '@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20CappedUpgradeable.sol';
-import '@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol';
-import { ContextUpgradeable } from '@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol';
-import { ERC2771ContextUpgradeable } from '@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol';
+import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import { ERC20CappedUpgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20CappedUpgradeable.sol";
+import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import { ERC2771ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 
-import { IPool } from './interfaces/IPool.sol';
-import { IToken } from './interfaces/IToken.sol';
-import { MintInstructions } from './interfaces/MintInstructions.sol';
+import { IPool } from "./interfaces/IPool.sol";
+import { IToken } from "./interfaces/IToken.sol";
+import { MintInstructions } from "./interfaces/MintInstructions.sol";
 
 struct Pool {
   address pool;
@@ -29,7 +29,7 @@ contract GNZToken is ERC20Upgradeable, ERC20CappedUpgradeable, AccessControlUpgr
   uint16 public constant MAX_BATCH_SIZE = 100;
 
   /// @notice Role for the registered pool allowing them to mint and transfer their allocation
-  bytes32 public constant POOL_ROLE = keccak256('POOL_ROLE');
+  bytes32 public constant POOL_ROLE = keccak256("POOL_ROLE");
 
   /// @custom:storage-location erc7201:gnztoken.main
   struct TokenStorage {
@@ -44,6 +44,7 @@ contract GNZToken is ERC20Upgradeable, ERC20CappedUpgradeable, AccessControlUpgr
   bytes32 private constant TokenStorageLocation = 0x0e2385ab6c223b07bb59e216ad8a8d80666689837fc52b28b56abcfa9954e000;
 
   function _getTokenStorage() private pure returns (TokenStorage storage $) {
+    // solhint-disable-next-line no-inline-assembly
     assembly {
       $.slot := TokenStorageLocation
     }
@@ -60,11 +61,11 @@ contract GNZToken is ERC20Upgradeable, ERC20CappedUpgradeable, AccessControlUpgr
    * @dev Grants the deployer the admin role and sets the total allocated tokens to zero.
    * @param tokenName The name of the token.
    * @param tokenTicker The symbol of the token.
-   * @param tokenSupply The maximum supply of the token (in whole units, scaled by decimals).
+   * @param tokenSupply The maximum supply of the token.
    */
   function initialize(string memory tokenName, string memory tokenTicker, uint256 tokenSupply) public initializer {
     __ERC20_init(tokenName, tokenTicker);
-    __ERC20Capped_init(tokenSupply * 10 ** decimals());
+    __ERC20Capped_init(tokenSupply);
     __AccessControl_init();
 
     // Grant the admin role to the wallet deploying the contract
@@ -87,7 +88,7 @@ contract GNZToken is ERC20Upgradeable, ERC20CappedUpgradeable, AccessControlUpgr
   function mint(address to, uint256 amount) public onlyRole(POOL_ROLE) returns (bool success) {
     TokenStorage storage $ = _getTokenStorage();
     if (amount > 0) {
-      require($.pools[_msgSender()].reservedTokens >= amount, 'Insufficient reserved tokens');
+      require($.pools[_msgSender()].reservedTokens >= amount, MissingTokens());
 
       $.pools[_msgSender()].reservedTokens -= amount;
       $.pools[_msgSender()].mintedTokens += amount;
@@ -105,14 +106,14 @@ contract GNZToken is ERC20Upgradeable, ERC20CappedUpgradeable, AccessControlUpgr
    */
   function batchMint(MintInstructions[] memory mintInstructions) public onlyRole(POOL_ROLE) returns (bool success) {
     TokenStorage storage $ = _getTokenStorage();
-    require(mintInstructions.length > 0, 'No mint instructions to process');
-    require(mintInstructions.length <= MAX_BATCH_SIZE, 'Batch size too large');
+    require(mintInstructions.length > 0, InvalidInput("Size empty"));
+    require(mintInstructions.length <= MAX_BATCH_SIZE, InvalidInput("Size too large"));
 
     uint256 totalAmount = 0;
     for (uint256 i = 0; i < mintInstructions.length; i++) {
       totalAmount += mintInstructions[i].amount;
     }
-    require($.pools[_msgSender()].reservedTokens >= totalAmount, 'Insufficient reserved tokens');
+    require($.pools[_msgSender()].reservedTokens >= totalAmount, MissingTokens());
 
     $.pools[_msgSender()].reservedTokens -= totalAmount;
     $.pools[_msgSender()].mintedTokens += totalAmount;
@@ -131,8 +132,8 @@ contract GNZToken is ERC20Upgradeable, ERC20CappedUpgradeable, AccessControlUpgr
    */
   function registerPool(address pool, uint256 amount) public onlyRole(DEFAULT_ADMIN_ROLE) {
     TokenStorage storage $ = _getTokenStorage();
-    require(!isValidPool(pool), 'Pool already registered');
-    require(cap() - $.totalAllocatedTokens >= amount, 'Insufficient token supply');
+    require(!isValidPool(pool), InvalidInput("Pool already registered"));
+    require(cap() - $.totalAllocatedTokens >= amount, MissingTokens());
 
     $.pools[pool].pool = pool;
     _grantRole(POOL_ROLE, pool);
@@ -142,7 +143,7 @@ contract GNZToken is ERC20Upgradeable, ERC20CappedUpgradeable, AccessControlUpgr
     $.totalAllocatedTokens += amount;
 
     bool success = IPool(pool).addTokenAllocation(amount);
-    require(success, 'Token allocation failed');
+    require(success, TransferAllocationFailed());
   }
 
   /**
@@ -153,15 +154,15 @@ contract GNZToken is ERC20Upgradeable, ERC20CappedUpgradeable, AccessControlUpgr
    */
   function transferAllocation(address to, uint256 amount) public onlyRole(POOL_ROLE) returns (bool success) {
     TokenStorage storage $ = _getTokenStorage();
-    require(isValidPool(to), 'Invalid recipient address');
-    require($.pools[_msgSender()].pool != $.pools[to].pool, 'Cannot transfer to the same pool');
-    require($.pools[_msgSender()].reservedTokens >= amount, 'Cannot transfer more than reserved');
+    require(isValidPool(to), InvalidInput("to"));
+    require($.pools[_msgSender()].pool != $.pools[to].pool, InvalidInput("to == _msgSender()"));
+    require($.pools[_msgSender()].reservedTokens >= amount, MissingTokens());
 
     $.pools[_msgSender()].reservedTokens -= amount;
     $.pools[to].reservedTokens += amount;
 
     success = IPool(to).addTokenAllocation(amount);
-    require(success, 'Token allocation transfer failed');
+    require(success, TransferAllocationFailed());
   }
 
   /**
@@ -202,4 +203,8 @@ contract GNZToken is ERC20Upgradeable, ERC20CappedUpgradeable, AccessControlUpgr
   function _contextSuffixLength() internal view virtual override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (uint256) {
     return ERC2771ContextUpgradeable._contextSuffixLength();
   }
+
+  error TransferAllocationFailed();
+  error InvalidInput(string);
+  error MissingTokens();
 }

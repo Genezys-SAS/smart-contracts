@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import { ScheduledReleasePool } from './templates/ScheduledReleasePool.sol';
-import { VestingPool } from './templates/VestingPool.sol';
-import { Pool } from './templates/Pool.sol';
+import { ScheduledReleasePool } from "./templates/ScheduledReleasePool.sol";
+import { VestingPool } from "./templates/VestingPool.sol";
+import { Pool } from "./templates/Pool.sol";
+import { VestingPool } from "./templates/VestingPool.sol";
+import { Pool } from "./templates/Pool.sol";
 
 /**
  * @title AthletePool

@@ -1,0 +1,43 @@
+{
+  "name": "smart_contracts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "npx hardhat compile",
+    "lint": "npx hardhat check",
+    "format": "npx prettier --write .",
+    "format:check": "npx prettier --list-different .",
+    "deploy": "rm -rf artifacts/* && npm run build && ./upload-on-s3.sh",
+    "test": "npx hardhat test",
+    "coverage": "npx hardhat coverage",
+    "wallet:info:localnet": "npx hardhat run scripts/info-wallet.ts --network base-localnet",
+    "wallet:create": "npx hardhat run scripts/create-wallet.ts | jq .",
+    "wallet:nonce:localnet": "npx hardhat run scripts/nonce-wallet.ts --network base-localnet",
+    "faucet:localnet": "npx hardhat run scripts/faucet-localnet.ts --network base-localnet",
+    "forwarder:sepolia": "npx hardhat run scripts/deploy-forwarder-etherjs.ts --network base-sepolia",
+    "collection:sepolia": "npx hardhat run scripts/deploy-collection-etherjs.ts --network base-sepolia",
+    "collection:upgrade:sepolia": "npx hardhat run scripts/upgrade-collection-etherjs.ts --network base-sepolia"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomiclabs/hardhat-solhint": "^4.0.1",
+    "@openzeppelin/hardhat-upgrades": "^3.5.0",
+    "eslint": "^8.57.1",
+    "hardhat": "^2.22.12",
+    "mocha": "^10.7.3",
+    "prettier": "^3.5.1",
+    "prettier-eslint": "^16.3.0",
+    "prettier-plugin-solidity": "^1.4.2",
+    "solhint-community": "^4.0.1",
+    "solhint-plugin-prettier": "^0.1.0",
+    "ts-node": "^10.9.2"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.1.0",
+    "@openzeppelin/contracts-upgradeable": "^5.1.0"
+  }
+}

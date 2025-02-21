@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import { Pool, MintInstructions } from './Pool.sol';
+import { Pool, MintInstructions } from "./Pool.sol";
 
 /**
  * @title VestingPool Abstract Contract
@@ -31,6 +31,7 @@ abstract contract VestingPool is Pool {
   bytes32 private constant VestingPoolStorageLocation = 0x01cac614b2a9a311e6b360e7633f3a18303d726228ce123b6206b00e2f3ecf00;
 
   function _getVestingPoolStorage() internal pure returns (VestingPoolStorage storage $) {
+    // solhint-disable-next-line no-inline-assembly
     assembly {
       $.slot := VestingPoolStorageLocation
     }
@@ -56,9 +57,9 @@ abstract contract VestingPool is Pool {
   function _addVesting(address _beneficiary, uint256 _totalAllocation, uint64 _start, uint64 _duration, uint64 _cliff) internal {
     VestingPoolStorage storage $ = _getVestingPoolStorage();
 
-    require(_totalAllocation <= getAvailableTokens(), 'Missing token Pool');
-    require($.vestings[_beneficiary].totalAllocation == 0, 'Already vested');
-    require(_totalAllocation > 0, 'Could not distribute 0 tokens');
+    require(_totalAllocation <= getAvailableTokens(), MissingTokens());
+    require($.vestings[_beneficiary].totalAllocation == 0, InvalidInput("Already vested"));
+    require(_totalAllocation > 0, InvalidInput("_totalAllocation"));
 
     $.getTotalUnreleased += _totalAllocation;
     $.vestingsAddress.push(_beneficiary);
@@ -146,13 +147,12 @@ abstract contract VestingPool is Pool {
       beneficiary.released += amount;
       $.getTotalUnreleased -= amount;
       success = _remoteMint(_beneficiary, amount);
-      require(success, 'Failed to mint');
     }
   }
 
   function _getRangeItemsOfPage(uint16 page) internal view returns (uint256 first, uint256 last) {
     VestingPoolStorage storage $ = _getVestingPoolStorage();
-    require(page * MAX_BATCH_SIZE < $.vestingsAddress.length, 'No page found');
+    require(page * MAX_BATCH_SIZE < $.vestingsAddress.length, InvalidInput("page"));
 
     first = page * MAX_BATCH_SIZE;
     if ((page + 1) * MAX_BATCH_SIZE <= $.vestingsAddress.length) {
@@ -182,7 +182,6 @@ abstract contract VestingPool is Pool {
     }
 
     success = _remoteBatchMint(mintInstructions);
-    require(success, 'Failed to mint');
   }
 
   function isAllReleaseable(uint16 page) public view returns (bool) {

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import { IToken } from '../GNZToken.sol';
-import { Pool } from './Pool.sol';
+import { Pool } from "./Pool.sol";
 
 /**
  * @title TransferPool Abstract Contract
@@ -22,9 +21,8 @@ abstract contract TransferPool is Pool {
    * @param amount The number of tokens to mint and transfer.
    */
   function transfer(address to, uint256 amount) public onlyRole(POOL_MANAGER_ROLE) {
-    require(amount <= getAvailableTokens(), 'Insufficient available amount');
+    require(amount <= getAvailableTokens(), MissingTokens());
 
-    bool success = _remoteMint(to, amount);
-    require(success, 'Token mint failed');
+    _remoteMint(to, amount);
   }
 }
