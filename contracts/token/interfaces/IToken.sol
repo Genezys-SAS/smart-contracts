@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
-import { MintInstructions } from './MintInstructions.sol';
+import { MintInstructions } from "./MintInstructions.sol";
 
 /**
  * @title IToken Interface

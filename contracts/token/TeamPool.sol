@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import { VestingPool } from './templates/VestingPool.sol';
-import { Pool } from './templates/Pool.sol';
+import { VestingPool } from "./templates/VestingPool.sol";
+import { Pool } from "./templates/Pool.sol";
 
 /**
  * @title TeamPool
@@ -37,6 +37,7 @@ contract TeamPool is VestingPool {
    * @return $ TeamPoolStorage The storage struct containing cliff and duration values.
    */
   function _getTeamStorage() internal pure returns (TeamPoolStorage storage $) {
+    // solhint-disable-next-line no-inline-assembly
     assembly {
       $.slot := TeamPoolStorageLocation
     }

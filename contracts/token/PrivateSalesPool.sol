@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import { VestingPool } from './templates/VestingPool.sol';
-import { Pool } from './templates/Pool.sol';
+import { VestingPool } from "./templates/VestingPool.sol";
+import { Pool } from "./templates/Pool.sol";
 
 /**
  * @title PrivateSalesPool
@@ -39,6 +39,7 @@ contract PrivateSalesPool is VestingPool {
    * @return $ PrivateSalesStorage The storage struct containing cliff and duration values.
    */
   function _getPrivateSalesStorage() internal pure returns (PrivateSalesStorage storage $) {
+    // solhint-disable-next-line no-inline-assembly
     assembly {
       $.slot := PrivateSalesStorageLocation
     }

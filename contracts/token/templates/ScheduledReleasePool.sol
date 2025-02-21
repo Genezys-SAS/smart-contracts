@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import { Pool, MintInstructions } from './Pool.sol';
+import { Pool } from "./Pool.sol";
 
 /**
  * @title ScheduledReleasePool Abstract Contract
@@ -24,6 +24,7 @@ abstract contract ScheduledReleasePool is Pool {
   bytes32 private constant ScheduledReleasePoolStorageLocation = 0xadf138f4d15d0770eed348171f34ea63ca3799a2f2de6bf7adfaf498cb834000;
 
   function _getScheduledReleasePoolStorage() internal pure returns (ScheduledReleasePoolStorage storage $) {
+    // solhint-disable-next-line no-inline-assembly
     assembly {
       $.slot := ScheduledReleasePoolStorageLocation
     }
@@ -97,7 +98,7 @@ abstract contract ScheduledReleasePool is Pool {
    * @param amount The amount of tokens to be forcefully released.
    */
   function _poolForceRelease(uint256 amount) internal {
-    require(getTotalAllocation() - poolReleased() >= amount, 'Missing token in pool');
+    require(getTotalAllocation() - poolReleased() >= amount, MissingTokens());
     _getScheduledReleasePoolStorage().released += amount;
   }
 
