@@ -8,16 +8,8 @@
     "lint": "npx hardhat check",
     "format": "npx prettier --write .",
     "format:check": "npx prettier --list-different .",
-    "deploy": "rm -rf artifacts/* && npm run build && ./upload-on-s3.sh",
     "test": "npx hardhat test",
-    "coverage": "npx hardhat coverage",
-    "wallet:info:localnet": "npx hardhat run scripts/info-wallet.ts --network base-localnet",
-    "wallet:create": "npx hardhat run scripts/create-wallet.ts | jq .",
-    "wallet:nonce:localnet": "npx hardhat run scripts/nonce-wallet.ts --network base-localnet",
-    "faucet:localnet": "npx hardhat run scripts/faucet-localnet.ts --network base-localnet",
-    "forwarder:sepolia": "npx hardhat run scripts/deploy-forwarder-etherjs.ts --network base-sepolia",
-    "collection:sepolia": "npx hardhat run scripts/deploy-collection-etherjs.ts --network base-sepolia",
-    "collection:upgrade:sepolia": "npx hardhat run scripts/upgrade-collection-etherjs.ts --network base-sepolia"
+    "coverage": "npx hardhat coverage"
   },
   "keywords": [],
   "author": "",

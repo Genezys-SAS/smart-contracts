@@ -5,7 +5,7 @@ import '@nomicfoundation/hardhat-verify';
 import '@nomiclabs/hardhat-solhint';
 
 // If not found use default wallet of localnet, but is recommanded to use this own key. Not work outside localnet
-const wallet = process.env.BASE_WALLET_KEY ?? '0x5a036d0f46f048fb87b2c5c9b8bc45f5c31d6127b68277a1ba33b75a79469c97';
+const wallet = process.env.BASE_WALLET_KEY || '';
 const basescanApiKey = process.env.BASESCAN_API_KEY as string;
 
 const config: HardhatUserConfig = {
@@ -35,12 +35,6 @@ const config: HardhatUserConfig = {
     // for local dev environment
     'base-local': {
       url: 'http://localhost:8545',
-      accounts: [wallet],
-      gasPrice: 1000000000,
-    },
-    // for genezys localnet
-    'base-localnet': {
-      url: 'http://35.181.12.116:8545',
       accounts: [wallet],
       gasPrice: 1000000000,
     },
