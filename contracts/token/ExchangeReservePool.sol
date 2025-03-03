@@ -19,6 +19,8 @@ import { Pool } from "./templates/Pool.sol";
  *      This contract is upgradeable using OpenZeppelin's upgradeable contract standard.
  */
 contract ExchangeReservePool is TransferPool {
+  string public constant POOL_NAME = "ExchangeReservePool";
+
   /**
    * @dev Constructor function. Since this contract is upgradeable,
    *      logic should be initialized via `initialize()` instead of the constructor.
@@ -34,7 +36,7 @@ contract ExchangeReservePool is TransferPool {
    *
    * @param tokenContract_ The address of the GNZ token contract.
    */
-  function initialize(address tokenContract_) public initializer {
-    __TransferPool_init(tokenContract_);
+  function initialize(address tokenContract_, address adminAddr_, address managerAddr_, address platformAddr_) public initializer {
+    __TransferPool_init(tokenContract_, adminAddr_, managerAddr_, platformAddr_);
   }
 }

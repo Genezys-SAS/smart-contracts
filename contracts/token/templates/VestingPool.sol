@@ -41,8 +41,13 @@ abstract contract VestingPool is Pool {
    * @notice Initializes the vesting pool with a specified token contract.
    * @param tokenContract_ The address of the GNZ token contract.
    */
-  function __VestingPool_init(address tokenContract_) internal onlyInitializing {
-    __Pool_init(tokenContract_);
+  function __VestingPool_init(
+    address tokenContract_,
+    address adminAddr_,
+    address managerAddr_,
+    address platformAddr_
+  ) internal onlyInitializing {
+    __Pool_init(tokenContract_, adminAddr_, managerAddr_, platformAddr_);
     _getVestingPoolStorage().getTotalUnreleased = 0;
   }
 
@@ -184,7 +189,7 @@ abstract contract VestingPool is Pool {
     success = _remoteBatchMint(mintInstructions);
   }
 
-  function isAllReleaseable(uint16 page) public view returns (bool) {
+  function isAllReleasable(uint16 page) public view returns (bool) {
     VestingPoolStorage storage $ = _getVestingPoolStorage();
 
     (uint256 first, uint256 last) = _getRangeItemsOfPage(page);

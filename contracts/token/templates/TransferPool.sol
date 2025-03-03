@@ -10,8 +10,13 @@ import { Pool } from "./Pool.sol";
  * the TransferPool is designed for immediate token transfers while still enforcing allocation limits.
  */
 abstract contract TransferPool is Pool {
-  function __TransferPool_init(address tokenContract_) internal onlyInitializing {
-    __Pool_init(tokenContract_);
+  function __TransferPool_init(
+    address tokenContract_,
+    address adminAddr_,
+    address managerAddr_,
+    address platformAddr_
+  ) internal onlyInitializing {
+    __Pool_init(tokenContract_, adminAddr_, managerAddr_, platformAddr_);
   }
 
   /**

@@ -36,13 +36,22 @@ abstract contract ScheduledReleasePool is Pool {
    * @param start_ The timestamp when the vesting starts.
    * @param duration_ The total duration of the vesting period.
    */
-  function __ScheduledReleasePool_init(address tokenContract_, uint64 start_, uint64 duration_) internal onlyInitializing {
+  function __ScheduledReleasePool_init(
+    address tokenContract_,
+    address adminAddr_,
+    address managerAddr_,
+    address platformAddr_,
+    uint64 start_,
+    uint64 duration_
+  ) internal onlyInitializing {
     ScheduledReleasePoolStorage storage $ = _getScheduledReleasePoolStorage();
-    __Pool_init(tokenContract_);
+    __Pool_init(tokenContract_, adminAddr_, managerAddr_, platformAddr_);
     $.start = start_;
     $.duration = duration_;
     $.released = 0;
   }
+
+  event PoolReleaseEvent(uint256 amount, uint64 date);
 
   /**
    * @notice Returns the total number of tokens released so far.
@@ -87,19 +96,16 @@ abstract contract ScheduledReleasePool is Pool {
   }
 
   /**
-   * @notice Releases the available tokens based on the vesting schedule.
+   * @dev Triggers the release of tokens according to the monthly release schedule.
+   *      This function moves tokens from the locked state to the available balance.
+   *
+   * @notice Only callable by an account with the `POOL_PLATFORM_ROLE`.
    */
-  function _poolRelease() internal {
-    _getScheduledReleasePoolStorage().released += poolReleasable();
-  }
-
-  /**
-   * @notice Forces the release of a specified amount of tokens before they are fully vested.
-   * @param amount The amount of tokens to be forcefully released.
-   */
-  function _poolForceRelease(uint256 amount) internal {
-    require(getTotalAllocation() - poolReleased() >= amount, MissingTokens());
+  function poolRelease() public onlyRole(POOL_PLATFORM_ROLE) {
+    uint256 amount = poolReleasable();
     _getScheduledReleasePoolStorage().released += amount;
+
+    emit PoolReleaseEvent(amount, uint64(block.timestamp));
   }
 
   /**
