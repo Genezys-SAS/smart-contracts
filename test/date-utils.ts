@@ -29,3 +29,7 @@ export async function addBlockchainTime(time: number): Promise<void> {
 export function expectIgnoreMs(given: number | bigint, expected: number): void {
   expect(new Date(Number(given)).setMilliseconds(0)).to.equal(new Date(expected).setMilliseconds(0));
 }
+
+export function isEqualsDateIgnoreMs(given: number | bigint, expected: number): boolean {
+  return new Date(Number(given)).setMilliseconds(0) === new Date(expected).setMilliseconds(0);
+}

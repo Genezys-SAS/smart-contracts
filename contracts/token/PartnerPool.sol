@@ -23,6 +23,8 @@ import { Pool } from "./templates/Pool.sol";
  *      This contract is upgradeable using OpenZeppelin's upgradeable contract standard.
  */
 contract PartnerPool is VestingPool, ScheduledReleasePool {
+  string public constant POOL_NAME = "PartnerPool";
+
   /**
    * @dev Constructor function. Since this contract is upgradeable,
    *      logic should be initialized via `initialize()` instead of the constructor.
@@ -40,9 +42,16 @@ contract PartnerPool is VestingPool, ScheduledReleasePool {
    * @param start_ The start time (timestamp) for the monthly release schedule.
    * @param duration_ The duration (in milliseconds) of the monthly release schedule.
    */
-  function initialize(address tokenContract_, uint64 start_, uint64 duration_) public initializer {
-    __VestingPool_init(tokenContract_);
-    __ScheduledReleasePool_init(tokenContract_, start_, duration_);
+  function initialize(
+    address tokenContract_,
+    address adminAddr_,
+    address managerAddr_,
+    address platformAddr_,
+    uint64 start_,
+    uint64 duration_
+  ) public initializer {
+    __VestingPool_init(tokenContract_, adminAddr_, managerAddr_, platformAddr_);
+    __ScheduledReleasePool_init(tokenContract_, adminAddr_, managerAddr_, platformAddr_, start_, duration_);
   }
 
   /**
@@ -69,15 +78,5 @@ contract PartnerPool is VestingPool, ScheduledReleasePool {
    */
   function addVesting(address _beneficiary, uint256 _totalAllocation, uint64 _duration, uint64 _cliff) public onlyRole(POOL_MANAGER_ROLE) {
     _addVesting(_beneficiary, _totalAllocation, uint64(block.timestamp), _duration, _cliff);
-  }
-
-  /**
-   * @dev Triggers the release of tokens according to the monthly release schedule.
-   *      This function moves tokens from the locked state to the available balance.
-   *
-   * @notice Only callable by an account with the `POOL_PLATFORM_ROLE`.
-   */
-  function poolRelease() public onlyRole(POOL_PLATFORM_ROLE) {
-    _poolRelease();
   }
 }

@@ -7,6 +7,8 @@ import { ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/Co
 import { ERC2771ContextUpgradeable } from "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 
 contract ExchangeOverflowReservePool is AccessControlUpgradeable, ERC2771ContextUpgradeable {
+  string public constant POOL_NAME = "ExchangeOverflowReservePool";
+
   /// @custom:storage-location erc7201:exchangeOverflowReservePool.main
   struct OverflowPoolStorage {
     address tokenContract;
@@ -26,17 +28,17 @@ contract ExchangeOverflowReservePool is AccessControlUpgradeable, ERC2771Context
   }
 
   /// @notice Role for the manager of the pool allowing them to transfer the pool tokens
-  bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
+  bytes32 public constant POOL_MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor(address forwarder) ERC2771ContextUpgradeable(forwarder) {}
 
-  function initialize(address tokenContract_) public initializer {
+  function initialize(address tokenContract_, address adminAddr_, address managerAddr_) public initializer {
     __AccessControl_init();
 
     // Setup roles
-    _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
-    _grantRole(MANAGER_ROLE, _msgSender());
+    _grantRole(DEFAULT_ADMIN_ROLE, adminAddr_);
+    _grantRole(POOL_MANAGER_ROLE, managerAddr_);
 
     OverflowPoolStorage storage $ = _getOverflowPoolStorage();
     $.tokenContract = tokenContract_;
@@ -61,7 +63,7 @@ contract ExchangeOverflowReservePool is AccessControlUpgradeable, ERC2771Context
    * @param to The address to transfer tokens to
    * @param amount The amount of tokens to transfer
    */
-  function transferToken(address to, uint256 amount) public onlyRole(MANAGER_ROLE) {
+  function transferToken(address to, uint256 amount) public onlyRole(POOL_MANAGER_ROLE) {
     require(to != address(0), InvalidInput("address"));
     require(amount > 0, InvalidInput("amount"));
     require(amount <= getBalance(), MissingTokens());

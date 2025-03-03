@@ -8,7 +8,10 @@ import { expect } from 'chai';
 type DeployTokenAndReservePoolReturn = {
   token: GNZToken;
   transferPool: TransferPool;
-  owner: HardhatEthersSigner;
+  deployer: HardhatEthersSigner;
+  admin: HardhatEthersSigner;
+  manager: HardhatEthersSigner;
+  platform: HardhatEthersSigner;
   otherAccount1: HardhatEthersSigner;
   otherAccount2: HardhatEthersSigner;
 };
@@ -26,16 +29,20 @@ describe('ExchangeReservePool', function () {
       constructorArgs: [await forwarder.getAddress()],
     })) as unknown as GNZToken;
 
+    const [deployer, admin, manager, platform, otherAccount1, otherAccount2] = await ethers.getSigners();
+
     // Deploy transferPool
     const transferPoolFactory = await ethers.getContractFactory('ExchangeReservePool');
     // Use hardhat-upgrade plugins to have correct deployment process (with upgrade), add upgrade verfication (like no constructor)
-    const transferPool = (await upgrades.deployProxy(transferPoolFactory, [await token.getAddress()], {
-      constructorArgs: [await forwarder.getAddress()],
-    })) as unknown as TransferPool;
+    const transferPool = (await upgrades.deployProxy(
+      transferPoolFactory,
+      [await token.getAddress(), await admin.getAddress(), await manager.getAddress(), await platform.getAddress()],
+      {
+        constructorArgs: [await forwarder.getAddress()],
+      },
+    )) as unknown as TransferPool;
 
-    const [owner, otherAccount1, otherAccount2] = await ethers.getSigners();
-
-    return { token, transferPool, owner, otherAccount1, otherAccount2 };
+    return { token, transferPool, deployer, admin, manager, platform, otherAccount1, otherAccount2 };
   }
 
   describe('getTokenContract', function () {
@@ -100,74 +107,67 @@ describe('ExchangeReservePool', function () {
 
   describe('transfer', function () {
     it('Should only allow pool manager to transfer token', async function () {
-      const { token, transferPool, otherAccount1, otherAccount2 } = await loadFixture(deployTokenAndReservePool);
+      const { token, transferPool, manager, admin, otherAccount1 } = await loadFixture(deployTokenAndReservePool);
 
       const poolReservedToken = BigInt(100) * BigInt(10 ** 18);
       await expect(token.registerPool(await transferPool.getAddress(), poolReservedToken)).not.be.reverted;
       expect(await transferPool.getReservedTokens()).to.equal(poolReservedToken);
 
-      // Add pool manager and transfer token to account 2
-      await expect(transferPool.grantRole(await transferPool.POOL_MANAGER_ROLE(), await otherAccount1.getAddress())).not.be.reverted;
-      await expect(transferPool.connect(otherAccount1).transfer(otherAccount2.getAddress(), poolReservedToken / BigInt(2))).not.be.reverted;
-      expect(await token.balanceOf(otherAccount2.getAddress())).to.equal(poolReservedToken / BigInt(2));
+      // Add ransfer token to account 2
+      await expect(transferPool.connect(manager).transfer(otherAccount1.getAddress(), poolReservedToken / BigInt(2))).not.be.reverted;
+      expect(await token.balanceOf(otherAccount1.getAddress())).to.equal(poolReservedToken / BigInt(2));
       expect(await transferPool.getDistributedTokens()).to.equal(poolReservedToken / BigInt(2));
 
-      // Remove pool manager and try to transfer token to account 2 but should fail
-
-      await expect(transferPool.revokeRole(await transferPool.POOL_MANAGER_ROLE(), await otherAccount1.getAddress())).not.be.reverted;
-      await expect(transferPool.connect(otherAccount1).transfer(otherAccount2.getAddress(), poolReservedToken / BigInt(2))).to.be.reverted;
-      expect(await token.balanceOf(otherAccount2.getAddress())).to.equal(poolReservedToken / BigInt(2));
+      // Unautorised user could not transfer
+      await expect(transferPool.connect(admin).transfer(otherAccount1.getAddress(), poolReservedToken / BigInt(2))).to.be.reverted;
+      expect(await token.balanceOf(otherAccount1.getAddress())).to.equal(poolReservedToken / BigInt(2));
       expect(await transferPool.getDistributedTokens()).to.equal(poolReservedToken / BigInt(2));
     });
 
     it('Should fail to transfer token to address 0', async function () {
-      const { token, transferPool, owner } = await loadFixture(deployTokenAndReservePool);
+      const { token, transferPool } = await loadFixture(deployTokenAndReservePool);
 
       const poolReservedToken = BigInt(1) * BigInt(10 ** 18);
       await expect(token.registerPool(await transferPool.getAddress(), poolReservedToken)).not.be.reverted;
       expect(await transferPool.getReservedTokens()).to.equal(poolReservedToken);
 
-      await expect(transferPool.grantRole(await transferPool.POOL_MANAGER_ROLE(), await owner.getAddress())).not.be.reverted;
       await expect(transferPool.transfer(ethers.ZeroAddress, poolReservedToken / BigInt(2))).to.be.reverted;
       expect(await transferPool.getReservedTokens()).to.equal(poolReservedToken);
       expect(await transferPool.getDistributedTokens()).to.equal(0);
     });
 
     it('Should fail to transfer 0 or less token', async function () {
-      const { token, transferPool, owner, otherAccount1 } = await loadFixture(deployTokenAndReservePool);
+      const { token, transferPool, otherAccount1 } = await loadFixture(deployTokenAndReservePool);
 
       const poolReservedToken = BigInt(1) * BigInt(10 ** 18);
       await expect(token.registerPool(await transferPool.getAddress(), poolReservedToken)).not.be.reverted;
       expect(await transferPool.getReservedTokens()).to.equal(poolReservedToken);
 
-      await expect(transferPool.grantRole(await transferPool.POOL_MANAGER_ROLE(), await owner.getAddress())).not.be.reverted;
       await expect(transferPool.transfer(otherAccount1.getAddress(), 0)).to.be.reverted;
       expect(await transferPool.getReservedTokens()).to.equal(poolReservedToken);
       expect(await transferPool.getDistributedTokens()).to.equal(0);
     });
 
     it('Should fail to transfer more than the token allocated', async function () {
-      const { token, transferPool, owner, otherAccount1 } = await loadFixture(deployTokenAndReservePool);
+      const { token, transferPool, otherAccount1 } = await loadFixture(deployTokenAndReservePool);
 
       const poolReservedToken = BigInt(1) * BigInt(10 ** 18);
       await expect(token.registerPool(await transferPool.getAddress(), poolReservedToken)).not.be.reverted;
       expect(await transferPool.getReservedTokens()).to.equal(poolReservedToken);
 
-      await expect(transferPool.grantRole(await transferPool.POOL_MANAGER_ROLE(), await owner.getAddress())).not.be.reverted;
       await expect(transferPool.transfer(otherAccount1.getAddress(), poolReservedToken + BigInt(1))).to.be.reverted;
       expect(await transferPool.getReservedTokens()).to.equal(poolReservedToken);
       expect(await transferPool.getDistributedTokens()).to.equal(0);
     });
 
     it('Should successfully transfer token', async function () {
-      const { token, transferPool, owner, otherAccount1 } = await loadFixture(deployTokenAndReservePool);
+      const { token, transferPool, manager, otherAccount1 } = await loadFixture(deployTokenAndReservePool);
 
       const poolReservedToken = BigInt(1) * BigInt(10 ** 18);
       await expect(token.registerPool(await transferPool.getAddress(), poolReservedToken)).not.be.reverted;
       expect(await transferPool.getReservedTokens()).to.equal(poolReservedToken);
 
-      await expect(transferPool.grantRole(await transferPool.POOL_MANAGER_ROLE(), await owner.getAddress())).not.be.reverted;
-      await expect(transferPool.transfer(otherAccount1.getAddress(), poolReservedToken / BigInt(2))).not.be.reverted;
+      await expect(transferPool.connect(manager).transfer(otherAccount1.getAddress(), poolReservedToken / BigInt(2))).not.be.reverted;
       expect(await transferPool.getReservedTokens()).to.equal(poolReservedToken / BigInt(2));
       expect(await transferPool.getDistributedTokens()).to.equal(poolReservedToken / BigInt(2));
 
@@ -177,6 +177,22 @@ describe('ExchangeReservePool', function () {
       expect(pool[0]).to.equal(await transferPool.getAddress());
       expect(pool[1]).to.equal(poolReservedToken / BigInt(2));
       expect(pool[2]).to.equal(poolReservedToken / BigInt(2));
+    });
+
+    it('Sould only transfert as manager', async () => {
+      const { token, transferPool, deployer, manager, admin, platform, otherAccount1, otherAccount2 } =
+        await loadFixture(deployTokenAndReservePool);
+
+      const poolReservedToken = BigInt(1) * BigInt(10 ** 18);
+      await expect(token.registerPool(await transferPool.getAddress(), poolReservedToken)).not.be.reverted;
+
+      for (const account of [admin, platform, otherAccount1, deployer]) {
+        await expect(transferPool.connect(account).transfer(otherAccount2.address, BigInt(1_000_000))).revertedWithCustomError(
+          transferPool,
+          'AccessControlUnauthorizedAccount',
+        );
+      }
+      await expect(transferPool.connect(manager).transfer(otherAccount2.address, BigInt(1_000_000))).not.reverted;
     });
   });
 });

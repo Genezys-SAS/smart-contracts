@@ -50,10 +50,12 @@ abstract contract Pool is ERC2771ContextUpgradeable, AccessControlUpgradeable, I
    * @notice Initializes the pool contract with a specified token contract address.
    * @param tokenContract_ The address of the GNZ token contract.
    */
-  function __Pool_init(address tokenContract_) internal onlyInitializing {
+  function __Pool_init(address tokenContract_, address adminAddr_, address managerAddr_, address platformAddr_) internal onlyInitializing {
     __AccessControl_init();
 
-    _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
+    _grantRole(DEFAULT_ADMIN_ROLE, adminAddr_);
+    _grantRole(POOL_MANAGER_ROLE, managerAddr_);
+    _grantRole(POOL_PLATFORM_ROLE, platformAddr_);
 
     PoolStorage storage $ = _getPoolStorage();
     $.reservedTokens = 0;

@@ -20,6 +20,8 @@ import { Pool } from "./templates/Pool.sol";
  *      This contract is upgradeable using OpenZeppelin’s upgradeable contract standard.
  */
 contract PrivateSalesPool is VestingPool {
+  string public constant POOL_NAME = "PrivateSalesPool";
+
   /// @custom:storage-location erc7201:privateSalesPool.main
   struct PrivateSalesStorage {
     uint64 cliff;
@@ -62,8 +64,15 @@ contract PrivateSalesPool is VestingPool {
    * @param cliff_ The cliff period (in milliseconds) before vesting starts.
    * @param duration_ The total duration (in milliseconds) of the vesting period.
    */
-  function initialize(address tokenContract_, uint64 cliff_, uint64 duration_) public initializer {
-    __VestingPool_init(tokenContract_);
+  function initialize(
+    address tokenContract_,
+    address adminAddr_,
+    address managerAddr_,
+    address platformAddr_,
+    uint64 cliff_,
+    uint64 duration_
+  ) public initializer {
+    __VestingPool_init(tokenContract_, adminAddr_, managerAddr_, platformAddr_);
     PrivateSalesStorage storage $ = _getPrivateSalesStorage();
     $.cliff = cliff_;
     $.duration = duration_;

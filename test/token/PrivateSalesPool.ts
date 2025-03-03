@@ -17,13 +17,16 @@ const MAX_BATCH_SIZE = 100; // Must match with batch max size of contract
 type DeployTokenReturn = {
   token: GNZToken;
   forwarder: Forwarder;
-  owner: HardhatEthersSigner;
-  otherAccount1: HardhatEthersSigner;
-  otherAccount2: HardhatEthersSigner;
 };
 
 type DeployPrivateSalesPoolReturn = DeployTokenReturn & {
   privateSalesPool: PrivateSalesPool;
+  deployer: HardhatEthersSigner;
+  admin: HardhatEthersSigner;
+  manager: HardhatEthersSigner;
+  platform: HardhatEthersSigner;
+  otherAccount1: HardhatEthersSigner;
+  otherAccount2: HardhatEthersSigner;
 };
 
 type DeployTokenPrivateSalesAndReservePoolReturn = DeployPrivateSalesPoolReturn & {
@@ -45,9 +48,7 @@ describe('PrivateSalesPool', function () {
       constructorArgs: [await forwarder.getAddress()],
     })) as unknown as GNZToken;
 
-    const [owner, otherAccount1, otherAccount2] = await ethers.getSigners();
-
-    return { token, forwarder, owner, otherAccount1, otherAccount2 };
+    return { token, forwarder };
   }
 
   async function deployPrivateSalesPool(): Promise<DeployPrivateSalesPoolReturn> {
@@ -55,31 +56,46 @@ describe('PrivateSalesPool', function () {
 
     const privateSalesPoolFactory = await ethers.getContractFactory('PrivateSalesPool');
 
+    const [deployer, admin, manager, platform, otherAccount1, otherAccount2] = await ethers.getSigners();
+
     // Use hardhat-upgrade plugins to have correct deployment process (with upgrade), add upgrade verfication (like no constructor)
     const privateSalesPool = (await upgrades.deployProxy(
       privateSalesPoolFactory,
-      [await deployTokenResult.token.getAddress(), monthToMs(2), monthToMs(12)],
+      [
+        await deployTokenResult.token.getAddress(),
+        await admin.getAddress(),
+        await manager.getAddress(),
+        await platform.getAddress(),
+        monthToMs(2),
+        monthToMs(12),
+      ],
       {
         constructorArgs: [await deployTokenResult.forwarder.getAddress()],
       },
     )) as unknown as PrivateSalesPool;
-    await privateSalesPool.grantRole(await privateSalesPool.POOL_MANAGER_ROLE(), deployTokenResult.owner);
-    await privateSalesPool.grantRole(await privateSalesPool.POOL_PLATFORM_ROLE(), deployTokenResult.owner);
 
     await deployTokenResult.token.registerPool(await privateSalesPool.getAddress(), 100_000);
 
-    return { ...deployTokenResult, privateSalesPool };
+    return { ...deployTokenResult, privateSalesPool, deployer, admin, manager, platform, otherAccount1, otherAccount2 };
   }
 
   async function deployTokenPrivateSalesAndReservePool(): Promise<DeployTokenPrivateSalesAndReservePoolReturn> {
     const deployTokenAndPrivateSalesPoolResult = await deployPrivateSalesPool();
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_, admin, manager, platform] = await ethers.getSigners();
 
     // Deploy transferPool
     const transferPoolFactory = await ethers.getContractFactory('ExchangeReservePool');
     // Use hardhat-upgrade plugins to have correct deployment process (with upgrade), add upgrade verfication (like no constructor)
     const exchangeReservePool = (await upgrades.deployProxy(
       transferPoolFactory,
-      [await deployTokenAndPrivateSalesPoolResult.token.getAddress()],
+      [
+        await deployTokenAndPrivateSalesPoolResult.token.getAddress(),
+        await admin.getAddress(),
+        await manager.getAddress(),
+        await platform.getAddress(),
+      ],
       {
         constructorArgs: [await deployTokenAndPrivateSalesPoolResult.forwarder.getAddress()],
       },
@@ -92,10 +108,10 @@ describe('PrivateSalesPool', function () {
 
   describe('addVesting', function () {
     it('should add one vestings', async () => {
-      const { privateSalesPool, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, manager, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
 
       await setBlockchainDate(startDate);
-      await expect(privateSalesPool.addVesting(otherAccount1, 120)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted;
 
       expect(await privateSalesPool.getPagination()).to.equal(1);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(120);
@@ -116,62 +132,68 @@ describe('PrivateSalesPool', function () {
     });
 
     it('should add multiples vestings', async () => {
-      const { privateSalesPool } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, manager } = await loadFixture(deployPrivateSalesPool);
       const NB_SIGNERS_STEP1 = 150;
       const NB_SIGNERS_STEP2 = 51;
 
       for (let i = 0; i < NB_SIGNERS_STEP1; i++) {
-        await expect(privateSalesPool.addVesting(Wallet.createRandom().address, 100)).not.be.reverted;
+        await expect(privateSalesPool.connect(manager).addVesting(Wallet.createRandom().address, 100)).not.be.reverted;
       }
 
       expect(await privateSalesPool.getPagination()).to.equal(Math.ceil(NB_SIGNERS_STEP1 / MAX_BATCH_SIZE));
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(100 * NB_SIGNERS_STEP1);
 
       for (let i = 1; i <= NB_SIGNERS_STEP2; i++) {
-        await expect(privateSalesPool.addVesting(Wallet.createRandom().address, 50)).not.be.reverted;
+        await expect(privateSalesPool.connect(manager).addVesting(Wallet.createRandom().address, 50)).not.be.reverted;
       }
       expect(await privateSalesPool.getPagination()).to.equal(Math.ceil((NB_SIGNERS_STEP1 + NB_SIGNERS_STEP2) / MAX_BATCH_SIZE));
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(100 * NB_SIGNERS_STEP1 + 50 * NB_SIGNERS_STEP2);
     });
 
     it('should not add same vestings user', async () => {
-      const { privateSalesPool, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, manager, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
 
-      await expect(privateSalesPool.addVesting(otherAccount1, 120)).not.be.reverted;
-      await expect(privateSalesPool.addVesting(otherAccount1, 120)).revertedWithCustomError(privateSalesPool, 'InvalidInput');
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).revertedWithCustomError(
+        privateSalesPool,
+        'InvalidInput',
+      );
     });
 
     it('should not vestings more than max in pool', async () => {
-      const { privateSalesPool } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, manager } = await loadFixture(deployPrivateSalesPool);
 
-      await expect(privateSalesPool.addVesting(Wallet.createRandom().address, 90_000)).not.be.reverted;
-      await expect(privateSalesPool.addVesting(Wallet.createRandom().address, 10_000)).not.be.reverted;
-      await expect(privateSalesPool.addVesting(Wallet.createRandom().address, 10_000)).revertedWithCustomError(
+      await expect(privateSalesPool.connect(manager).addVesting(Wallet.createRandom().address, 90_000)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(Wallet.createRandom().address, 10_000)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(Wallet.createRandom().address, 10_000)).revertedWithCustomError(
         privateSalesPool,
         'MissingTokens',
       );
     });
 
-    it('should not add when not admin', async () => {
-      const { privateSalesPool, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+    it('Sould addVesting as manager', async () => {
+      const { privateSalesPool, deployer, manager, admin, platform, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
 
-      await expect(privateSalesPool.connect(otherAccount1).addVesting(Wallet.createRandom().address, 90_000)).be.revertedWithCustomError(
-        privateSalesPool,
-        'AccessControlUnauthorizedAccount',
-      );
+      for (const account of [admin, platform, otherAccount1, deployer]) {
+        await expect(privateSalesPool.connect(account).addVesting(Wallet.createRandom().address, 90_000)).revertedWithCustomError(
+          privateSalesPool,
+          'AccessControlUnauthorizedAccount',
+        );
+      }
+      await expect(privateSalesPool.connect(manager).addVesting(Wallet.createRandom().address, 90_000)).not.reverted;
     });
   });
 
   describe('release', function () {
     it('should release one vestings at multiple time', async () => {
-      const { privateSalesPool, token, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, token, manager, platform, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
 
       await setBlockchainDate(startDate);
-      await expect(privateSalesPool.addVesting(otherAccount1, 120)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted;
 
       // + 1 mount
       await addBlockchainTime(monthToMs(1));
-      await expect(privateSalesPool.release(otherAccount1)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount1)).not.be.reverted;
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(120);
@@ -181,7 +203,7 @@ describe('PrivateSalesPool', function () {
       // + 2 mount
       await addBlockchainTime(monthToMs(1));
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
-      await expect(privateSalesPool.release(otherAccount1)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount1)).not.be.reverted;
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(120);
@@ -191,7 +213,7 @@ describe('PrivateSalesPool', function () {
       // + 2.5 mount
       await addBlockchainTime(dayToMs(15));
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(5);
-      await expect(privateSalesPool.release(otherAccount1)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount1)).not.be.reverted;
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(5);
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(115);
@@ -201,7 +223,7 @@ describe('PrivateSalesPool', function () {
       // + 3 mount
       await addBlockchainTime(dayToMs(15));
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(5);
-      await expect(privateSalesPool.release(otherAccount1)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount1)).not.be.reverted;
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(10);
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(110);
@@ -211,7 +233,7 @@ describe('PrivateSalesPool', function () {
       // + 4 mount
       await addBlockchainTime(monthToMs(1));
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(10);
-      await expect(privateSalesPool.release(otherAccount1)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount1)).not.be.reverted;
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(20);
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(100);
@@ -221,7 +243,7 @@ describe('PrivateSalesPool', function () {
       // + 10 mount
       await addBlockchainTime(monthToMs(6));
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(60);
-      await expect(privateSalesPool.release(otherAccount1)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount1)).not.be.reverted;
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(80);
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(40);
@@ -231,7 +253,7 @@ describe('PrivateSalesPool', function () {
       // + 14 mount
       await addBlockchainTime(monthToMs(4));
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(40);
-      await expect(privateSalesPool.release(otherAccount1)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount1)).not.be.reverted;
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(120);
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(0);
@@ -241,7 +263,7 @@ describe('PrivateSalesPool', function () {
       // + 15 mount
       await addBlockchainTime(monthToMs(4));
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
-      await expect(privateSalesPool.release(otherAccount1)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount1)).not.be.reverted;
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(120);
       expect(await privateSalesPool.releasable(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(0);
@@ -250,15 +272,15 @@ describe('PrivateSalesPool', function () {
     });
 
     it('sould release all token of pool', async () => {
-      const { privateSalesPool, token, otherAccount1, otherAccount2 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, token, manager, platform, otherAccount1, otherAccount2 } = await loadFixture(deployPrivateSalesPool);
 
       await setBlockchainDate(startDate);
-      await expect(privateSalesPool.addVesting(otherAccount1, 50_000)).not.be.reverted;
-      await expect(privateSalesPool.addVesting(otherAccount2, 50_000)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 50_000)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount2, 50_000)).not.be.reverted;
       await addBlockchainTime(monthToMs(15));
 
-      await expect(privateSalesPool.release(otherAccount1)).not.be.reverted;
-      await expect(privateSalesPool.release(otherAccount2)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount1)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).release(otherAccount2)).not.be.reverted;
 
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(0);
       expect(await privateSalesPool.getAvailableTokens()).to.equal(0);
@@ -269,10 +291,10 @@ describe('PrivateSalesPool', function () {
     });
 
     it('should not release if not releasabler', async () => {
-      const { privateSalesPool, token, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, token, manager, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
 
       await setBlockchainDate(startDate);
-      await expect(privateSalesPool.addVesting(otherAccount1, 120)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted;
 
       await addBlockchainTime(monthToMs(15));
       await expect(privateSalesPool.connect(otherAccount1).release(otherAccount1)).be.revertedWithCustomError(
@@ -288,10 +310,10 @@ describe('PrivateSalesPool', function () {
     });
 
     it('should release me', async () => {
-      const { privateSalesPool, token, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, token, manager, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
 
       await setBlockchainDate(startDate);
-      await expect(privateSalesPool.addVesting(otherAccount1, 120)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted;
 
       // + 3 mount
       await addBlockchainTime(monthToMs(3));
@@ -303,21 +325,36 @@ describe('PrivateSalesPool', function () {
       expect(await privateSalesPool.getAvailableTokens()).to.equal(100_000 - 120);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(10);
     });
+
+    it('Sould release as platform', async () => {
+      const { privateSalesPool, deployer, manager, admin, platform, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+
+      await setBlockchainDate(startDate);
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted;
+
+      for (const account of [admin, manager, otherAccount1, deployer]) {
+        await expect(privateSalesPool.connect(account).release(otherAccount1.address)).revertedWithCustomError(
+          privateSalesPool,
+          'AccessControlUnauthorizedAccount',
+        );
+      }
+      await expect(privateSalesPool.connect(platform).release(otherAccount1.address)).not.reverted;
+    });
   });
 
   describe('releaseAll', function () {
     it('should release multiple vestings at multiple time', async () => {
-      const { privateSalesPool, token, otherAccount1, otherAccount2 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, token, manager, platform, otherAccount1, otherAccount2 } = await loadFixture(deployPrivateSalesPool);
 
       await setBlockchainDate(startDate);
-      await expect(privateSalesPool.addVesting(otherAccount1, 120)).not.be.reverted;
-      await expect(privateSalesPool.addVesting(otherAccount2, 1_200)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount2, 1_200)).not.be.reverted;
 
       // + 1 mount
       await addBlockchainTime(monthToMs(1));
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(0);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.released(await otherAccount2.getAddress())).to.equal(0);
@@ -327,9 +364,9 @@ describe('PrivateSalesPool', function () {
 
       // + 2 mount
       await addBlockchainTime(monthToMs(1));
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(0);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(0);
       expect(await privateSalesPool.released(await otherAccount2.getAddress())).to.equal(0);
@@ -339,9 +376,9 @@ describe('PrivateSalesPool', function () {
 
       // + 2.5 mount
       await addBlockchainTime(dayToMs(15));
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(true);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(true);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(5);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(5);
       expect(await privateSalesPool.released(await otherAccount2.getAddress())).to.equal(50);
@@ -351,9 +388,9 @@ describe('PrivateSalesPool', function () {
 
       // + 3 mount
       await addBlockchainTime(dayToMs(15));
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(true);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(true);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(10);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(10);
       expect(await privateSalesPool.released(await otherAccount2.getAddress())).to.equal(100);
@@ -363,9 +400,9 @@ describe('PrivateSalesPool', function () {
 
       // + 4 mount
       await addBlockchainTime(monthToMs(1));
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(true);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(true);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(20);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(20);
       expect(await privateSalesPool.released(await otherAccount2.getAddress())).to.equal(200);
@@ -375,9 +412,9 @@ describe('PrivateSalesPool', function () {
 
       // + 10 mount
       await addBlockchainTime(monthToMs(6));
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(true);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(true);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(80);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(80);
       expect(await privateSalesPool.released(await otherAccount2.getAddress())).to.equal(800);
@@ -387,9 +424,9 @@ describe('PrivateSalesPool', function () {
 
       // + 14 mount
       await addBlockchainTime(monthToMs(4));
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(true);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(true);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(120);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(120);
       expect(await privateSalesPool.released(await otherAccount2.getAddress())).to.equal(1200);
@@ -399,9 +436,9 @@ describe('PrivateSalesPool', function () {
 
       // + 15 mount
       await addBlockchainTime(monthToMs(4));
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await privateSalesPool.released(await otherAccount1.getAddress())).to.equal(120);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(120);
       expect(await privateSalesPool.released(await otherAccount2.getAddress())).to.equal(1200);
@@ -411,7 +448,7 @@ describe('PrivateSalesPool', function () {
     });
 
     it('should release multiple vestings with multiple page', async () => {
-      const { privateSalesPool, token } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, token, manager, platform } = await loadFixture(deployPrivateSalesPool);
       const wallets: string[] = [];
       for (let i = 0; i < MAX_BATCH_SIZE * 2; i++) {
         wallets.push(Wallet.createRandom().address);
@@ -421,7 +458,7 @@ describe('PrivateSalesPool', function () {
       let halfTotalToken = 0;
       let totalToken = 0;
       for (let i = 1; i <= wallets.length; i++) {
-        await expect(privateSalesPool.addVesting(wallets[i - 1], i)).not.be.reverted;
+        await expect(privateSalesPool.connect(manager).addVesting(wallets[i - 1], i)).not.be.reverted;
         if (i <= MAX_BATCH_SIZE) halfTotalToken += i;
         totalToken += i;
       }
@@ -432,9 +469,9 @@ describe('PrivateSalesPool', function () {
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(totalToken);
       expect(await privateSalesPool.getAvailableTokens()).to.equal(100_000 - totalToken);
 
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(true);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(true);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(totalToken - halfTotalToken);
       expect(await privateSalesPool.getAvailableTokens()).to.equal(100_000 - totalToken);
       expect(await token.balanceOf(wallets[0])).to.equal(1);
@@ -442,9 +479,9 @@ describe('PrivateSalesPool', function () {
       expect(await token.balanceOf(wallets[MAX_BATCH_SIZE])).to.equal(0);
       expect(await token.balanceOf(wallets[MAX_BATCH_SIZE * 2 - 1])).to.equal(0);
 
-      expect(await privateSalesPool.isAllReleaseable(1)).to.equal(true);
-      await expect(privateSalesPool.releaseAll(1)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(1)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(1)).to.equal(true);
+      await expect(privateSalesPool.connect(platform).releaseAll(1)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(1)).to.equal(false);
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(0);
       expect(await privateSalesPool.getAvailableTokens()).to.equal(100_000 - totalToken);
       expect(await token.balanceOf(wallets[0])).to.equal(1);
@@ -454,16 +491,16 @@ describe('PrivateSalesPool', function () {
     });
 
     it('sould release all token of pool', async () => {
-      const { privateSalesPool, token, otherAccount1, otherAccount2 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, token, manager, platform, otherAccount1, otherAccount2 } = await loadFixture(deployPrivateSalesPool);
 
       await setBlockchainDate(startDate);
-      await expect(privateSalesPool.addVesting(otherAccount1, 50_000)).not.be.reverted;
-      await expect(privateSalesPool.addVesting(otherAccount2, 50_000)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 50_000)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount2, 50_000)).not.be.reverted;
       await addBlockchainTime(monthToMs(15));
 
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(true);
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(true);
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
 
       expect(await privateSalesPool.getTotalUnreleased()).to.equal(0);
       expect(await privateSalesPool.getAvailableTokens()).to.equal(0);
@@ -474,10 +511,10 @@ describe('PrivateSalesPool', function () {
     });
 
     it('should not release if not releasabler', async () => {
-      const { privateSalesPool, token, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, token, manager, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
 
       await setBlockchainDate(startDate);
-      await expect(privateSalesPool.addVesting(otherAccount1, 120)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted;
 
       await addBlockchainTime(monthToMs(15));
       await expect(privateSalesPool.connect(otherAccount1).releaseAll(0)).be.revertedWithCustomError(
@@ -491,49 +528,76 @@ describe('PrivateSalesPool', function () {
       expect(await privateSalesPool.getAvailableTokens()).to.equal(100_000 - 120);
       expect(await token.balanceOf(await otherAccount1.getAddress())).to.equal(0);
     });
+
+    it('Sould releaseAll as platform', async () => {
+      const { privateSalesPool, deployer, manager, admin, platform, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+
+      await setBlockchainDate(startDate);
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted;
+
+      for (const account of [admin, manager, otherAccount1, deployer]) {
+        await expect(privateSalesPool.connect(account).releaseAll(0)).revertedWithCustomError(
+          privateSalesPool,
+          'AccessControlUnauthorizedAccount',
+        );
+      }
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.reverted;
+    });
   });
 
   describe('cleanListAll', function () {
     it('should cleanListAll correclty', async () => {
-      const { privateSalesPool, token, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+      const { privateSalesPool, token, manager, platform, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
 
       await setBlockchainDate(startDate);
       for (let i = 0; i < MAX_BATCH_SIZE; i++) {
-        await expect(privateSalesPool.addVesting(Wallet.createRandom().address, 120)).not.be.reverted;
+        await expect(privateSalesPool.connect(manager).addVesting(Wallet.createRandom().address, 120)).not.be.reverted;
       }
 
       await addBlockchainTime(monthToMs(15));
-      await expect(privateSalesPool.addVesting(otherAccount1, 120)).not.be.reverted; // In page 1
+      await expect(privateSalesPool.connect(manager).addVesting(otherAccount1, 120)).not.be.reverted; // In page 1
 
       expect(await privateSalesPool.isCleanable()).to.equal(false);
       expect(await privateSalesPool.getPagination()).to.equal(2);
 
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(true);
-      expect(await privateSalesPool.isAllReleaseable(1)).to.equal(false); // contains only otherAccount1, but not started
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      await expect(privateSalesPool.releaseAll(1)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(true);
+      expect(await privateSalesPool.isAllReleasable(1)).to.equal(false); // contains only otherAccount1, but not started
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      await expect(privateSalesPool.connect(platform).releaseAll(1)).not.be.reverted;
       expect(await token.balanceOf(otherAccount1.address)).to.equal(0);
       expect(await privateSalesPool.isCleanable()).to.equal(true);
-      await expect(privateSalesPool.cleanReleased()).not.be.reverted; // otherAccount1 should move one page 0
+      await expect(privateSalesPool.connect(platform).cleanReleased()).not.be.reverted; // otherAccount1 should move one page 0
       expect(await privateSalesPool.isCleanable()).to.equal(false);
       expect(await privateSalesPool.getPagination()).to.equal(1);
 
       await addBlockchainTime(monthToMs(8) + 1);
       expect(await privateSalesPool.isCleanable()).to.equal(false);
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(true); // contains only otherAccount1, and now started
-      await expect(privateSalesPool.releaseAll(0)).not.be.reverted;
-      expect(await privateSalesPool.isAllReleaseable(0)).to.equal(false);
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(true); // contains only otherAccount1, and now started
+      await expect(privateSalesPool.connect(platform).releaseAll(0)).not.be.reverted;
+      expect(await privateSalesPool.isAllReleasable(0)).to.equal(false);
       expect(await token.balanceOf(otherAccount1.address)).to.equal(60);
       expect(await privateSalesPool.isCleanable()).to.equal(false);
       expect(await privateSalesPool.getPagination()).to.equal(1);
+    });
+
+    it('Sould cleanListAll as platform', async () => {
+      const { privateSalesPool, deployer, manager, admin, platform, otherAccount1 } = await loadFixture(deployPrivateSalesPool);
+
+      for (const account of [admin, manager, otherAccount1, deployer]) {
+        await expect(privateSalesPool.connect(account).cleanReleased()).revertedWithCustomError(
+          privateSalesPool,
+          'AccessControlUnauthorizedAccount',
+        );
+      }
+      await expect(privateSalesPool.connect(platform).cleanReleased()).not.reverted;
     });
   });
 
   describe('close', function () {
     it('should transfer the remaining token allocation to another pool', async () => {
-      const { privateSalesPool, exchangeReservePool, token } = await loadFixture(deployTokenPrivateSalesAndReservePool);
+      const { privateSalesPool, exchangeReservePool, token, admin } = await loadFixture(deployTokenPrivateSalesAndReservePool);
 
-      await expect(privateSalesPool.close(await exchangeReservePool.getAddress())).not.be.reverted;
+      await expect(privateSalesPool.connect(admin).close(await exchangeReservePool.getAddress())).not.be.reverted;
       expect(await privateSalesPool.getReservedTokens()).to.equal(0);
       expect(await exchangeReservePool.getReservedTokens()).to.equal(200_000);
 
@@ -549,14 +613,14 @@ describe('PrivateSalesPool', function () {
     });
 
     it('should transfer the remaining token allocation to another pool but keep vested amount', async () => {
-      const { privateSalesPool, exchangeReservePool, token, otherAccount1, otherAccount2 } = await loadFixture(
+      const { privateSalesPool, exchangeReservePool, token, admin, manager, otherAccount1, otherAccount2 } = await loadFixture(
         deployTokenPrivateSalesAndReservePool,
       );
 
-      await expect(privateSalesPool.addVesting(await otherAccount1.getAddress(), 50_000)).not.be.reverted;
-      await expect(privateSalesPool.addVesting(await otherAccount2.getAddress(), 25_000)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(await otherAccount1.getAddress(), 50_000)).not.be.reverted;
+      await expect(privateSalesPool.connect(manager).addVesting(await otherAccount2.getAddress(), 25_000)).not.be.reverted;
 
-      await expect(privateSalesPool.close(await exchangeReservePool.getAddress())).not.be.reverted;
+      await expect(privateSalesPool.connect(admin).close(await exchangeReservePool.getAddress())).not.be.reverted;
       expect(await privateSalesPool.getReservedTokens()).to.equal(75_000);
       expect(await exchangeReservePool.getReservedTokens()).to.equal(125_000);
 
@@ -569,6 +633,20 @@ describe('PrivateSalesPool', function () {
       expect(tokenExchangeReservePool[0]).to.equal(await exchangeReservePool.getAddress());
       expect(tokenExchangeReservePool[1]).to.equal(125_000);
       expect(tokenExchangeReservePool[2]).to.equal(0);
+    });
+
+    it('Sould close as admin', async () => {
+      const { privateSalesPool, exchangeReservePool, deployer, manager, admin, platform, otherAccount1 } = await loadFixture(
+        deployTokenPrivateSalesAndReservePool,
+      );
+
+      for (const account of [manager, platform, otherAccount1, deployer]) {
+        await expect(privateSalesPool.connect(account).close(await privateSalesPool.getAddress())).revertedWithCustomError(
+          privateSalesPool,
+          'AccessControlUnauthorizedAccount',
+        );
+      }
+      await expect(privateSalesPool.connect(admin).close(await exchangeReservePool.getAddress())).not.reverted;
     });
   });
 });
