@@ -13,6 +13,7 @@
   - [Scheduled Release Pool](#scheduled-release-pool)
 - [Smart Contracts](#smart-contracts)
   - [GNZ Token Smart Contract](#gnz-token-smart-contract)
+  - [Community Pool Smart Contract](#community-pool-smart-contract)
   - [Exchange Reserve Smart Contract](#exchange-reserve-smart-contract)
   - [Team Pool Smart Contract](#team-pool-smart-contract)
   - [Private Sales Pool Smart Contract](#private-sales-pool-smart-contract)
@@ -278,6 +279,82 @@ getTotalAllocatedTokens() → uint256
 `
 
 - Returns the total number of tokens allocated across all registered pools.
+
+
+## Community Pool Smart Contract
+
+The **Community Pool** smart contract is designed to manage a reserved supply of **2,700,000,000 GNZ tokens** for distribution to the community through airdrops at regular intervals (epochs).
+
+Each epoch, the number of tokens distributed is not fixed but is dynamically adjusted based on platform engagement and market conditions. The calculation starts with a baseTotal number of GNZ tokens, which is then multiplied by various adjustment ratios to determine the actual number of tokens released.
+
+### Key Features
+
+The Community Pool contract is built upon the `Pool` abstract contract, which provides a mechanism for reserving and distributing GNZ tokens in a structured manner. To enforce structured token distribution, the contract implements role-based access control, where only addresses with the `POOL_MANAGER_ROLE` to trigger token releases and execute batch transfers.
+
+The total number of tokens released per epoch is influenced by four key ratios:
+
+- **Fancard Activity** (`fancardRatio`): This ratio measures the number of Fancards bought in the primary market at the end of the current epoch compared to the last epoch.
+
+- **User Activity** (`userActivityRatio`): It tracks the number of active users at the end of the current epoch compared to the previous one.
+
+- **Platform Engagement** (`pointsRatio`): This ratio reflects the total number of points distributed by the platform, indicating overall user engagement and transaction volume.
+
+- **GNZ Token Price** (`priceRatio`): This ratio compares the GNZ token price at the end of the current epoch to its price at the end of the previous epoch.
+
+To determine the global adjustment factor, these four ratios are multiplied together:
+
+`globalAdjustment = fancardRatio × userActivityRatio × pointsRatio × priceRatio`
+
+The number of tokens to be released is then calculated as follows:
+
+`total = baseTotal×globalAdjustment`
+
+Addresses with the `DEFAULT_ADMIN_ROLE` can change the base total amount to provide further flexibility on airdrops.
+
+#### Summary of Key Features
+
+- **Token Reservation & Controlled Minting**: Tokens remain reserved and are only minted when needed for exchange liquidity or staking. Airdrop amounts are decided by a dynamic formala.
+- **Role-Based Access Control**: Only entities with the `POOL_MANAGER_ROLE` can mint and allocate tokens.
+- **Batch and Single Operations**: The contract supports both individual and batch operations for efficient distribution.
+- **Meta-Transaction Support**: Utilizes `ERC2771ContextUpgradeable` to support meta-transactions.
+- **Upgradeable Architecture**: The contract is structured for future upgrades while ensuring robust security measures.
+
+### Core Contract Functions
+
+#### Initialization (`initialize`)
+
+This function is used to set up the contract with the necessary parameters:
+- The GNZ token contract address.
+- The admin, manager, and platform addresses responsible for managing the contract.
+- The `baseTotal` value, which serves as the foundation for token distribution calculations.
+
+It also initializes the number of released tokens to zero.
+
+#### Token Tracking Functions
+
+- `poolReleased()`:  Returns the total number of GNZ tokens released so far.
+- `getAvailableTokens()`: Calculates how many tokens are available for distribution, subtracting the already distributed tokens from the released pool.
+
+#### Modifying Token Allocation
+
+- `setBaseTotal()`: Allows an admin to update the baseTotal value, which impacts the calculation of the tokens released in future epochs.
+
+#### Releasing Tokens (`poolRelease`)
+
+This function is responsible for calculating and triggering the release of GNZ tokens each epoch using the global adjustment formula. It ensures that:
+
+- The total allocation of GNZ tokens is not exceeded.
+- The calculated amount of tokens is correctly added to the released pool.
+- A `PoolReleaseEvent` is emitted to maintain transparency in the process.
+
+#### Batch Transfers of Tokens (`batchTransfer`)
+
+To efficiently distribute the tokens to users, the contract includes a batch transfer function, which:
+
+- Sends GNZ tokens to multiple recipients at once.
+- Ensures that no more than the available tokens are distributed.
+- Verifies that all recipient addresses are valid before processing the transfer.
+- Executes the transfer through `_remoteBatchMint()`.
 
 ## Exchange Reserve Smart Contract
 
